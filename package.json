@@ -18,8 +18,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/khairold/aura.git",
-    "directory": "packages/xml-render"
+    "url": "git+https://github.com/khairold/xml-render.git"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
