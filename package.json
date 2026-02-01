@@ -1,6 +1,6 @@
 {
   "name": "@khairold/xml-render",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A type-safe XML-like tag parser and renderer framework for React and React Native",
   "keywords": [
     "xml",
