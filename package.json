@@ -1,0 +1,60 @@
+{
+  "name": "@khairold/xml-render",
+  "version": "0.1.0",
+  "description": "A type-safe XML-like tag parser and renderer framework for React and React Native",
+  "keywords": [
+    "xml",
+    "parser",
+    "react",
+    "react-native",
+    "streaming",
+    "llm",
+    "ai",
+    "render",
+    "zod",
+    "typescript"
+  ],
+  "author": "Khairul Kamarudin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khairold/aura.git",
+    "directory": "packages/xml-render"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "default": "./dist/react/index.js"
+    },
+    "./react-native": {
+      "types": "./dist/react-native/index.d.ts",
+      "default": "./dist/react-native/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.70.0",
+    "zod": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  }
+}
