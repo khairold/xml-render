@@ -55,10 +55,11 @@ function parseAttributes(attrString: string): Record<string, string> {
   if (!attrString) return attrs;
 
   // Match key="value" or key='value' patterns
-  const pattern = /(\w+)=["']([^"']*)["']/g;
+  // Each quote type only terminates at its own matching quote
+  const pattern = /(\w+)=(?:"([^"]*)"|'([^']*)')/g;
   let match;
   while ((match = pattern.exec(attrString)) !== null) {
-    attrs[match[1]] = decodeXmlEntities(match[2]);
+    attrs[match[1]] = decodeXmlEntities(match[2] ?? match[3]);
   }
   return attrs;
 }

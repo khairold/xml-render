@@ -4,7 +4,7 @@
  * Creates an immutable registry of XML tag definitions with Zod schema validation.
  * TypeScript infers attribute types directly from the Zod schemas.
  */
-import type { ZodType, infer as ZodInfer, ZodSafeParseResult } from "zod";
+import type { ZodType, infer as ZodInfer } from "zod";
 
 /**
  * Definition for a single XML tag in the registry
