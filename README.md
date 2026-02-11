@@ -137,7 +137,7 @@ const segments = parser.parse('Hello <callout type="info">World</callout>');
 For real-time content streaming (e.g., LLM responses):
 
 ```ts
-import { createParser, type ParserState } from '@khairold/xml-render';
+import { createParser, type ParserState, type Segments } from '@khairold/xml-render';
 
 const parser = createParser(registry);
 
@@ -155,10 +155,9 @@ function onChunk(chunk: string) {
   // Append complete segments
   allSegments = [...allSegments, ...result.segments];
 
-  // Check if currently buffering a tag
-  if (result.isBuffering && result.bufferingTag) {
-    // Show loading placeholder for the buffering tag type
-    showPlaceholder(result.bufferingTag);
+  // Access partial content of in-progress tags
+  if (result.partialSegment) {
+    console.log(`Streaming <${result.partialSegment.type}>: ${result.partialSegment.content}`);
   }
 }
 
@@ -167,6 +166,30 @@ function onStreamEnd() {
   const finalSegments = parser.finalize(state);
   allSegments = [...allSegments, ...finalSegments];
 }
+```
+
+#### Rendering partial segments
+
+Pass `partialSegment` to `XmlRender` to render in-progress tags alongside completed segments. Renderer components receive a `streaming` prop so they can show streaming UI (e.g., a blinking cursor):
+
+```tsx
+const catalog = createCatalog(registry, {
+  components: {
+    codeblock: ({ segment, streaming }) => (
+      <pre>
+        {segment.content}
+        {streaming && <span className="cursor-blink">|</span>}
+      </pre>
+    ),
+  },
+});
+
+// In your component
+<XmlRender
+  segments={allSegments}
+  catalog={catalog}
+  partialSegment={result.partialSegment}
+/>
 ```
 
 ### React Renderer
@@ -249,6 +272,7 @@ The React Native API is identical to React. The only differences are:
 ```ts
 import {
   type ParsedSegment,
+  type PartialSegment,
   type Segments,
   type SegmentType,
   type ParserState,

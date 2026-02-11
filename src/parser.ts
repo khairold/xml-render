@@ -24,6 +24,23 @@ export interface ParsedSegment<
 }
 
 /**
+ * A partial segment representing an in-progress tag during streaming
+ */
+export interface PartialSegment<
+  TDefs extends TagDefinitions = TagDefinitions,
+  TType extends keyof TDefs = keyof TDefs,
+> {
+  /** The tag type being streamed */
+  type: TType;
+  /** The partial content received so far */
+  content: string;
+  /** Attributes parsed from the opening tag */
+  attributes?: InferAttributes<TDefs[TType]>;
+  /** Literal discriminant indicating this segment is still streaming */
+  streaming: true;
+}
+
+/**
  * Union of all segment types for a given registry
  */
 export type SegmentType<TDefs extends TagDefinitions> = keyof TDefs | "text";
@@ -92,6 +109,8 @@ export interface StreamingParseResult<TDefs extends TagDefinitions> {
   isBuffering: boolean;
   /** The type of tag being buffered, if any */
   bufferingTag: keyof TDefs | null;
+  /** The in-progress segment being streamed, if any */
+  partialSegment?: PartialSegment<TDefs>;
 }
 
 /**
@@ -458,6 +477,25 @@ export function createParser<TDefs extends TagDefinitions>(
     // Update buffer to only contain unprocessed content
     newState.buffer = remaining + textBuffer;
 
+    // Build partialSegment when inside an open tag
+    let partialSegment: PartialSegment<TDefs> | undefined;
+    if (newState.inComponent && newState.currentTag) {
+      const rawAttrs = parseAttributes(newState.currentAttrs);
+      const normalizedTag = newState.currentTag.toLowerCase();
+      const validationResult = registry.validateAttributes(
+        normalizedTag as keyof TDefs,
+        rawAttrs
+      );
+      partialSegment = {
+        type: normalizedTag as keyof TDefs,
+        content: decodeXmlEntities(remaining),
+        attributes: validationResult.success
+          ? validationResult.data
+          : (rawAttrs as InferAttributes<TDefs[keyof TDefs]>),
+        streaming: true,
+      } as PartialSegment<TDefs>;
+    }
+
     return {
       segments,
       state: newState,
@@ -465,6 +503,7 @@ export function createParser<TDefs extends TagDefinitions>(
       bufferingTag: newState.inComponent
         ? (newState.currentTag as keyof TDefs)
         : null,
+      partialSegment,
     };
   }
 

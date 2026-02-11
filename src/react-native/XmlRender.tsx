@@ -7,7 +7,7 @@
 import React, { type ReactElement, type ReactNode } from "react";
 import { View, Text } from "react-native";
 import type { TagDefinitions } from "../registry";
-import type { Segments, ParsedSegment } from "../parser";
+import type { Segments, ParsedSegment, PartialSegment } from "../parser";
 import { useXmlRenderContext } from "./context";
 import type { Catalog } from "./catalog";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -24,6 +24,8 @@ export interface XmlRenderProps<TDefs extends TagDefinitions> {
   catalog?: Catalog<TDefs>;
   /** Optional custom error fallback renderer */
   errorFallback?: (error: Error, segmentType: string) => ReactNode;
+  /** Optional in-progress segment being streamed */
+  partialSegment?: PartialSegment<TDefs>;
 }
 
 /**
@@ -61,7 +63,8 @@ function renderSegmentContent<TDefs extends TagDefinitions>(
   segment: ParsedSegment<TDefs>,
   index: number,
   catalog: Catalog<TDefs>,
-  fallback?: (segment: ParsedSegment<TDefs>, index: number) => ReactNode
+  fallback?: (segment: ParsedSegment<TDefs>, index: number) => ReactNode,
+  streaming?: boolean
 ): ReactNode {
   const segmentType = segment.type;
 
@@ -73,6 +76,7 @@ function renderSegmentContent<TDefs extends TagDefinitions>(
         <TextRenderer
           segment={segment as ParsedSegment<TDefs, "text">}
           index={index}
+          streaming={streaming}
         />
       );
     }
@@ -82,7 +86,7 @@ function renderSegmentContent<TDefs extends TagDefinitions>(
   // Handle registered tag segments
   const Renderer = catalog.getRenderer(segmentType as keyof TDefs);
   if (Renderer) {
-    return <Renderer segment={segment as ParsedSegment<TDefs, keyof TDefs>} index={index} />;
+    return <Renderer segment={segment as ParsedSegment<TDefs, keyof TDefs>} index={index} streaming={streaming} />;
   }
 
   // Use fallback for unknown segment types
@@ -135,6 +139,7 @@ export function XmlRender<TDefs extends TagDefinitions>({
   fallback,
   catalog: catalogProp,
   errorFallback,
+  partialSegment,
 }: XmlRenderProps<TDefs>): ReactElement {
   // Use provided catalog or get from context
   const contextValue = catalogProp ? null : useXmlRenderContext<TDefs>();
@@ -157,6 +162,21 @@ export function XmlRender<TDefs extends TagDefinitions>({
           {renderSegmentContent(segment, index, catalog, fallback)}
         </ErrorBoundary>
       ))}
+      {partialSegment && (
+        <ErrorBoundary
+          key="partial"
+          segmentType={String(partialSegment.type)}
+          fallback={errorFallback}
+        >
+          {renderSegmentContent(
+            partialSegment as unknown as ParsedSegment<TDefs>,
+            segments.length,
+            catalog,
+            fallback,
+            true
+          )}
+        </ErrorBoundary>
+      )}
     </View>
   );
 }

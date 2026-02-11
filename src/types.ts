@@ -170,6 +170,36 @@ export interface ParsedSegment<
 }
 
 /**
+ * A partial segment representing an in-progress tag during streaming.
+ *
+ * This type surfaces the content of a tag that is still being received,
+ * allowing consumers to render progressive/streaming UI for in-progress tags.
+ *
+ * @typeParam TDefs - The tag definitions from the registry
+ * @typeParam TType - The specific tag type (defaults to union of all tag types)
+ *
+ * @example
+ * ```ts
+ * if (result.partialSegment) {
+ *   console.log(`Streaming <${result.partialSegment.type}>: ${result.partialSegment.content}`);
+ * }
+ * ```
+ */
+export interface PartialSegment<
+  TDefs extends TagDefinitions = TagDefinitions,
+  TType extends keyof TDefs = keyof TDefs,
+> {
+  /** The tag type being streamed */
+  type: TType;
+  /** The partial content received so far */
+  content: string;
+  /** Attributes parsed from the opening tag */
+  attributes?: InferAttributes<TDefs[TType]>;
+  /** Literal discriminant indicating this segment is still streaming */
+  streaming: true;
+}
+
+/**
  * Union type of all valid segment types for a given registry.
  *
  * This includes all registered tag names plus the 'text' type for plain content.
@@ -236,6 +266,8 @@ export interface StreamingParseResult<TDefs extends TagDefinitions> {
   isBuffering: boolean;
   /** The type of tag being buffered, if any (useful for showing loading states) */
   bufferingTag: keyof TDefs | null;
+  /** The in-progress segment being streamed, if any */
+  partialSegment?: PartialSegment<TDefs>;
 }
 
 /**
@@ -315,6 +347,8 @@ export interface SegmentProps<
   segment: ParsedSegment<TDefs, TType>;
   /** Index of this segment in the segments array */
   index: number;
+  /** Whether this segment is still streaming (true for partial segments) */
+  streaming?: boolean;
 }
 
 /**
@@ -327,6 +361,8 @@ export interface TextSegmentProps<TDefs extends TagDefinitions> {
   segment: ParsedSegment<TDefs, "text">;
   /** Index of this segment in the segments array */
   index: number;
+  /** Whether this segment is still streaming (true for partial segments) */
+  streaming?: boolean;
 }
 
 /**

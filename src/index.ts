@@ -61,6 +61,7 @@ export type {
 export type {
   Parser,
   ParsedSegment,
+  PartialSegment,
   SegmentType,
   Segments,
   ParserState,

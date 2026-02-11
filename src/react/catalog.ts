@@ -24,6 +24,8 @@ export interface SegmentProps<
   segment: ParsedSegment<TDefs, TType>;
   /** Index of this segment in the segments array */
   index: number;
+  /** Whether this segment is still streaming (true for partial segments) */
+  streaming?: boolean;
 }
 
 /**
@@ -32,6 +34,7 @@ export interface SegmentProps<
 export interface TextSegmentProps<TDefs extends TagDefinitions> {
   segment: ParsedSegment<TDefs, "text">;
   index: number;
+  streaming?: boolean;
 }
 
 /**
