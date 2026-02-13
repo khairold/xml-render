@@ -45,25 +45,3 @@ export * from "./types";
 // Re-export type guard helper
 export { isSegmentType } from "./types";
 
-// ============================================================================
-// Legacy Type Exports (for backwards compatibility)
-// These are also exported from ./types for convenience
-// ============================================================================
-
-export type {
-  TagDefinition,
-  TagDefinitions,
-  Registry,
-  InferAttributes,
-  SafeParseResult,
-} from "./registry";
-
-export type {
-  Parser,
-  ParsedSegment,
-  PartialSegment,
-  SegmentType,
-  Segments,
-  ParserState,
-  StreamingParseResult,
-} from "./parser";

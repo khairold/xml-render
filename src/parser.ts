@@ -4,53 +4,35 @@
  * Creates a registry-aware parser that converts text containing XML-like tags
  * into typed segments. Supports complete text parsing and streaming.
  */
-import type { Registry, TagDefinitions, InferAttributes } from "./registry";
+import type {
+  Registry,
+  TagDefinitions,
+  InferAttributes,
+  ParsedSegment,
+  PartialSegment,
+  SegmentType,
+  Segments,
+  ParserState,
+  StreamingParseResult,
+  Parser,
+} from "./types";
+
+// Re-export types for backwards compatibility
+export type {
+  ParsedSegment,
+  PartialSegment,
+  SegmentType,
+  Segments,
+  ParserState,
+  StreamingParseResult,
+  Parser,
+} from "./types";
 
 /**
- * A parsed segment representing either plain text or a recognized tag
+ * Maximum number of characters from the end of a buffer to check
+ * for potential incomplete tag starts
  */
-export interface ParsedSegment<
-  TDefs extends TagDefinitions = TagDefinitions,
-  TType extends keyof TDefs | "text" = keyof TDefs | "text",
-> {
-  /** The segment type: 'text' or a registered tag name */
-  type: TType;
-  /** The content inside the tag, or the text content for 'text' segments */
-  content: string;
-  /** Attributes parsed from the tag (undefined for 'text' segments) */
-  attributes?: TType extends keyof TDefs
-    ? InferAttributes<TDefs[TType]>
-    : undefined;
-}
-
-/**
- * A partial segment representing an in-progress tag during streaming
- */
-export interface PartialSegment<
-  TDefs extends TagDefinitions = TagDefinitions,
-  TType extends keyof TDefs = keyof TDefs,
-> {
-  /** The tag type being streamed */
-  type: TType;
-  /** The partial content received so far */
-  content: string;
-  /** Attributes parsed from the opening tag */
-  attributes?: InferAttributes<TDefs[TType]>;
-  /** Literal discriminant indicating this segment is still streaming */
-  streaming: true;
-}
-
-/**
- * Union of all segment types for a given registry
- */
-export type SegmentType<TDefs extends TagDefinitions> = keyof TDefs | "text";
-
-/**
- * A segment array that can contain any valid segment for the registry
- */
-export type Segments<TDefs extends TagDefinitions> = Array<
-  ParsedSegment<TDefs, keyof TDefs | "text">
->;
+const MAX_INCOMPLETE_TAG_LENGTH = 20;
 
 /**
  * Decode basic XML entities
@@ -82,78 +64,10 @@ function parseAttributes(attrString: string): Record<string, string> {
 }
 
 /**
- * Parser state for handling incomplete/streaming content
+ * Escape special regex characters in a string
  */
-export interface ParserState {
-  /** Accumulated text buffer */
-  buffer: string;
-  /** Whether we're currently inside an unclosed component tag */
-  inComponent: boolean;
-  /** The tag name being processed, if any */
-  currentTag: string | null;
-  /** Attributes string for the current tag */
-  currentAttrs: string;
-  /** Index in buffer where current tag started */
-  tagStartIndex: number;
-}
-
-/**
- * Result of parsing a streaming chunk
- */
-export interface StreamingParseResult<TDefs extends TagDefinitions> {
-  /** Segments that are complete and can be rendered */
-  segments: Segments<TDefs>;
-  /** Updated parser state for next chunk */
-  state: ParserState;
-  /** Whether we're currently buffering (waiting for more data) */
-  isBuffering: boolean;
-  /** The type of tag being buffered, if any */
-  bufferingTag: keyof TDefs | null;
-  /** The in-progress segment being streamed, if any */
-  partialSegment?: PartialSegment<TDefs>;
-}
-
-/**
- * Parser interface returned by createParser
- */
-export interface Parser<TDefs extends TagDefinitions> {
-  /**
-   * Parse a complete text string into segments.
-   * This is the main entry point for non-streaming use cases.
-   *
-   * @param text - The complete text to parse
-   * @returns Array of parsed segments in order
-   */
-  parse(text: string): Segments<TDefs>;
-
-  /**
-   * Create initial parser state for streaming parsing.
-   *
-   * @returns Fresh parser state
-   */
-  createState(): ParserState;
-
-  /**
-   * Parse a chunk of streaming text.
-   * Handles incomplete tags by buffering until complete.
-   *
-   * @param chunk - New text chunk to process
-   * @param state - Current parser state
-   * @returns Parse result with complete segments and updated state
-   */
-  parseChunk(chunk: string, state: ParserState): StreamingParseResult<TDefs>;
-
-  /**
-   * Finalize parsing, returning any remaining buffered content as text.
-   * Call this when streaming is complete.
-   *
-   * @param state - Current parser state
-   * @returns Final segments including any buffered content
-   */
-  finalize(state: ParserState): Segments<TDefs>;
-
-  /** The registry used by this parser */
-  readonly registry: Registry<TDefs>;
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
@@ -346,6 +260,144 @@ export function createParser<TDefs extends TagDefinitions>(
   }
 
   /**
+   * Process the case where we're inside an open component tag,
+   * looking for the closing tag.
+   *
+   * @returns The remaining unprocessed string, or null if still waiting for closing tag
+   */
+  function processInsideComponent(
+    remaining: string,
+    newState: ParserState,
+    segments: Segments<TDefs>
+  ): string | null {
+    const closingPattern = new RegExp(
+      `</${escapeRegex(newState.currentTag!)}>`,
+      "i"
+    );
+    const closeMatch = remaining.match(closingPattern);
+
+    if (closeMatch) {
+      const closeIndex = remaining.indexOf(closeMatch[0]);
+
+      // We have a complete component
+      const content = remaining.slice(0, closeIndex);
+      const segment = createSegment(
+        newState.currentTag!,
+        newState.currentAttrs,
+        content
+      );
+      segments.push(segment);
+
+      // Reset state
+      const afterClose = remaining.slice(closeIndex + closeMatch[0].length);
+      newState.inComponent = false;
+      newState.currentTag = null;
+      newState.currentAttrs = "";
+      return afterClose;
+    }
+
+    // Still waiting for closing tag
+    return null;
+  }
+
+  /**
+   * Process text looking for an opening tag.
+   *
+   * @returns Object with the remaining string and updated textBuffer,
+   *          or null if we should break out of the loop (buffering)
+   */
+  function processOpenTag(
+    remaining: string,
+    newState: ParserState,
+    segments: Segments<TDefs>,
+    textBuffer: string,
+    processedUpTo: number,
+    bufferLength: number
+  ): { remaining: string; textBuffer: string; processedUpTo: number } | null {
+    const openMatch = remaining.match(openingTagPattern);
+
+    if (openMatch) {
+      const tagIndex = remaining.indexOf(openMatch[0]);
+
+      if (tagIndex > 0) {
+        // Text before the tag
+        return {
+          remaining: remaining.slice(tagIndex),
+          textBuffer: textBuffer + remaining.slice(0, tagIndex),
+          processedUpTo,
+        };
+      }
+
+      // Check if it might be an incomplete tag at the end
+      if (remaining.endsWith("<") || /^<[^>]*$/.test(remaining)) {
+        return null;
+      }
+
+      const tagName = openMatch[1].toLowerCase();
+      const attrStr = openMatch[2] || "";
+      const isSelfClosing =
+        openMatch[3] === "/" ||
+        registry.isSelfClosing(tagName as keyof TDefs);
+
+      if (isSelfClosing) {
+        if (textBuffer) {
+          addTextSegment(segments, textBuffer);
+          textBuffer = "";
+        }
+
+        const segment = createSegment(tagName, attrStr, "");
+        segments.push(segment);
+
+        const afterTag = remaining.slice(openMatch[0].length);
+        return {
+          remaining: afterTag,
+          textBuffer,
+          processedUpTo: bufferLength - afterTag.length,
+        };
+      }
+
+      // Start of a component tag with content
+      if (textBuffer) {
+        addTextSegment(segments, textBuffer);
+        textBuffer = "";
+      }
+
+      newState.inComponent = true;
+      newState.currentTag = tagName;
+      newState.currentAttrs = attrStr;
+      newState.tagStartIndex = processedUpTo;
+
+      const afterTag = remaining.slice(openMatch[0].length);
+      return {
+        remaining: afterTag,
+        textBuffer,
+        processedUpTo: bufferLength - afterTag.length,
+      };
+    }
+
+    // No tag found, check for potential incomplete tag at end
+    const potentialTagStart = remaining.lastIndexOf("<");
+    if (
+      potentialTagStart !== -1 &&
+      potentialTagStart > remaining.length - MAX_INCOMPLETE_TAG_LENGTH
+    ) {
+      // Might be start of a tag, buffer it
+      return {
+        remaining: remaining.slice(potentialTagStart),
+        textBuffer: textBuffer + remaining.slice(0, potentialTagStart),
+        processedUpTo: bufferLength - remaining.slice(potentialTagStart).length,
+      };
+    }
+
+    // No tags, all text
+    return {
+      remaining: "",
+      textBuffer: textBuffer + remaining,
+      processedUpTo: bufferLength,
+    };
+  }
+
+  /**
    * Parse a streaming chunk with state management
    */
   function parseChunk(
@@ -362,109 +414,28 @@ export function createParser<TDefs extends TagDefinitions>(
 
     while (remaining.length > 0) {
       if (newState.inComponent && newState.currentTag) {
-        // Look for closing tag
-        const closingPattern = new RegExp(
-          `</${escapeRegex(newState.currentTag)}>`,
-          "i"
-        );
-        const closeMatch = remaining.match(closingPattern);
-
-        if (closeMatch) {
-          const closeIndex = remaining.indexOf(closeMatch[0]);
-
-          // We have a complete component
-          const content = remaining.slice(0, closeIndex);
-          const segment = createSegment(
-            newState.currentTag,
-            newState.currentAttrs,
-            content
-          );
-          segments.push(segment);
-
-          // Reset state
-          remaining = remaining.slice(closeIndex + closeMatch[0].length);
+        const result = processInsideComponent(remaining, newState, segments);
+        if (result !== null) {
+          remaining = result;
           processedUpTo = newState.buffer.length - remaining.length;
-          newState.inComponent = false;
-          newState.currentTag = null;
-          newState.currentAttrs = "";
         } else {
-          // Still waiting for closing tag
           break;
         }
       } else {
-        // Check for opening tag
-        const openMatch = remaining.match(openingTagPattern);
-
-        if (openMatch) {
-          const tagIndex = remaining.indexOf(openMatch[0]);
-
-          if (tagIndex > 0) {
-            // Text before the tag
-            textBuffer += remaining.slice(0, tagIndex);
-            remaining = remaining.slice(tagIndex);
-            continue;
-          }
-
-          // Check if it might be an incomplete tag at the end
-          // Only buffer if the potential tag is at the very end and looks incomplete
-          if (remaining.endsWith("<") || /^<[^>]*$/.test(remaining)) {
-            // Potentially incomplete tag, keep buffering
-            break;
-          }
-
-          const tagName = openMatch[1].toLowerCase();
-          const attrStr = openMatch[2] || "";
-          const isSelfClosing =
-            openMatch[3] === "/" ||
-            registry.isSelfClosing(tagName as keyof TDefs);
-
-          if (isSelfClosing) {
-            // Flush text buffer
-            if (textBuffer) {
-              addTextSegment(segments, textBuffer);
-              textBuffer = "";
-            }
-
-            // Create segment for self-closing tag
-            const segment = createSegment(tagName, attrStr, "");
-            segments.push(segment);
-
-            remaining = remaining.slice(openMatch[0].length);
-            processedUpTo = newState.buffer.length - remaining.length;
-            continue;
-          }
-
-          // Start of a component tag with content
-          if (textBuffer) {
-            addTextSegment(segments, textBuffer);
-            textBuffer = "";
-          }
-
-          newState.inComponent = true;
-          newState.currentTag = tagName;
-          newState.currentAttrs = attrStr;
-          newState.tagStartIndex = processedUpTo;
-
-          remaining = remaining.slice(openMatch[0].length);
-          processedUpTo = newState.buffer.length - remaining.length;
-        } else {
-          // No tag found, check for potential incomplete tag at end
-          const potentialTagStart = remaining.lastIndexOf("<");
-          if (
-            potentialTagStart !== -1 &&
-            potentialTagStart > remaining.length - 20
-          ) {
-            // Might be start of a tag, buffer it
-            textBuffer += remaining.slice(0, potentialTagStart);
-            remaining = remaining.slice(potentialTagStart);
-            break;
-          }
-
-          // No tags, all text
-          textBuffer += remaining;
-          remaining = "";
-          processedUpTo = newState.buffer.length;
+        const result = processOpenTag(
+          remaining,
+          newState,
+          segments,
+          textBuffer,
+          processedUpTo,
+          newState.buffer.length
+        );
+        if (result === null) {
+          break;
         }
+        remaining = result.remaining;
+        textBuffer = result.textBuffer;
+        processedUpTo = result.processedUpTo;
       }
     }
 
@@ -532,11 +503,4 @@ export function createParser<TDefs extends TagDefinitions>(
     finalize,
     registry,
   };
-}
-
-/**
- * Escape special regex characters in a string
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

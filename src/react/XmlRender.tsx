@@ -10,6 +10,7 @@ import type { Segments, ParsedSegment, PartialSegment } from "../parser";
 import { useXmlRenderContext } from "./context";
 import type { Catalog } from "./catalog";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { renderSegmentContent } from "../shared/renderSegment";
 
 /**
  * Props for the XmlRender component
@@ -33,7 +34,7 @@ export interface XmlRenderProps<TDefs extends TagDefinitions> {
 function DefaultTextRenderer<TDefs extends TagDefinitions>({
   segment,
 }: {
-  segment: ParsedSegment<TDefs, "text">;
+  segment: ParsedSegment<TDefs>;
 }): ReactElement {
   return <span>{segment.content}</span>;
 }
@@ -46,54 +47,12 @@ function DefaultFallback<TDefs extends TagDefinitions>({
 }: {
   segment: ParsedSegment<TDefs>;
 }): ReactElement {
-  // In development, show a warning; in production, render content as text
   if (process.env.NODE_ENV === "development") {
     console.warn(
       `XmlRender: No renderer found for segment type "${String(segment.type)}"`
     );
   }
   return <span>{segment.content}</span>;
-}
-
-/**
- * Render a single segment using the catalog (without key or ErrorBoundary wrapper)
- */
-function renderSegmentContent<TDefs extends TagDefinitions>(
-  segment: ParsedSegment<TDefs>,
-  index: number,
-  catalog: Catalog<TDefs>,
-  fallback?: (segment: ParsedSegment<TDefs>, index: number) => ReactNode,
-  streaming?: boolean
-): ReactNode {
-  const segmentType = segment.type;
-
-  // Handle text segments
-  if (segmentType === "text") {
-    const TextRenderer = catalog.getTextRenderer();
-    if (TextRenderer) {
-      return (
-        <TextRenderer
-          segment={segment as ParsedSegment<TDefs, "text">}
-          index={index}
-          streaming={streaming}
-        />
-      );
-    }
-    return <DefaultTextRenderer segment={segment as ParsedSegment<TDefs, "text">} />;
-  }
-
-  // Handle registered tag segments
-  const Renderer = catalog.getRenderer(segmentType as keyof TDefs);
-  if (Renderer) {
-    return <Renderer segment={segment as ParsedSegment<TDefs, keyof TDefs>} index={index} streaming={streaming} />;
-  }
-
-  // Use fallback for unknown segment types
-  if (fallback) {
-    return fallback(segment, index);
-  }
-
-  return <DefaultFallback segment={segment} />;
 }
 
 /**
@@ -158,7 +117,7 @@ export function XmlRender<TDefs extends TagDefinitions>({
           segmentType={String(segment.type)}
           fallback={errorFallback}
         >
-          {renderSegmentContent(segment, index, catalog, fallback)}
+          {renderSegmentContent(segment, index, catalog, DefaultTextRenderer, DefaultFallback, fallback)}
         </ErrorBoundary>
       ))}
       {partialSegment && (
@@ -171,6 +130,8 @@ export function XmlRender<TDefs extends TagDefinitions>({
             partialSegment as unknown as ParsedSegment<TDefs>,
             segments.length,
             catalog,
+            DefaultTextRenderer,
+            DefaultFallback,
             fallback,
             true
           )}

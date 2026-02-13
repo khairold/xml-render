@@ -4,8 +4,9 @@
  * Catches render errors in segment components and displays a fallback UI.
  * Prevents a single segment error from crashing the entire content area.
  */
-import React, { Component, type ReactNode, type ErrorInfo } from "react";
+import React, { type ReactNode } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { ErrorBoundaryBase } from "../shared/ErrorBoundary";
 
 /**
  * Props for the ErrorBoundary component
@@ -19,12 +20,18 @@ export interface ErrorBoundaryProps {
   fallback?: (error: Error, segmentType: string) => ReactNode;
 }
 
-/**
- * State for the ErrorBoundary component
- */
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
+function renderDevError(error: Error, segmentType: string): ReactNode {
+  return (
+    <View style={styles.errorContainer}>
+      <Text style={styles.errorText}>
+        Error in [{segmentType}]: {error.message}
+      </Text>
+    </View>
+  );
+}
+
+function renderProdFallback(): ReactNode {
+  return <View style={styles.hidden} />;
 }
 
 /**
@@ -54,52 +61,17 @@ interface ErrorBoundaryState {
  * </ErrorBoundary>
  * ```
  */
-export class ErrorBoundary extends Component<
-  ErrorBoundaryProps,
-  ErrorBoundaryState
-> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    // Log the error for debugging
-    console.error(
-      `XmlRender ErrorBoundary: Failed to render segment type "${this.props.segmentType}"`,
-      error,
-      errorInfo.componentStack
-    );
-  }
-
-  render(): ReactNode {
-    if (this.state.hasError && this.state.error) {
-      // Use custom fallback if provided
-      if (this.props.fallback) {
-        return this.props.fallback(this.state.error, this.props.segmentType);
-      }
-
-      // Development: show detailed error info
-      if (process.env.NODE_ENV === "development") {
-        return (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>
-              Error in [{this.props.segmentType}]: {this.state.error.message}
-            </Text>
-          </View>
-        );
-      }
-
-      // Production: minimal hidden fallback
-      return <View style={styles.hidden} />;
-    }
-
-    return this.props.children;
-  }
+export function ErrorBoundary({ children, segmentType, fallback }: ErrorBoundaryProps): React.ReactElement {
+  return (
+    <ErrorBoundaryBase
+      segmentType={segmentType}
+      fallback={fallback}
+      renderDevError={renderDevError}
+      renderProdFallback={renderProdFallback}
+    >
+      {children}
+    </ErrorBoundaryBase>
+  );
 }
 
 const styles = StyleSheet.create({

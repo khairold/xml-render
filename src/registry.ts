@@ -4,68 +4,22 @@
  * Creates an immutable registry of XML tag definitions with Zod schema validation.
  * TypeScript infers attribute types directly from the Zod schemas.
  */
-import type { ZodType, infer as ZodInfer } from "zod";
+import type {
+  TagDefinition,
+  TagDefinitions,
+  InferAttributes,
+  SafeParseResult,
+  Registry,
+} from "./types";
 
-/**
- * Definition for a single XML tag in the registry
- */
-export interface TagDefinition<TSchema extends ZodType = ZodType> {
-  /** Zod schema for validating and typing tag attributes */
-  schema: TSchema;
-  /** Whether the tag contains inner content (default: true) */
-  hasContent?: boolean;
-  /** Whether the tag is self-closing like <image /> (default: false) */
-  selfClosing?: boolean;
-}
-
-/**
- * Input type for createRegistry - a record of tag names to definitions
- */
-export type TagDefinitions = Record<string, TagDefinition>;
-
-/**
- * Infer the attribute type from a TagDefinition's Zod schema
- */
-export type InferAttributes<T extends TagDefinition> = ZodInfer<T["schema"]>;
-
-/**
- * Safe parse result type for validateAttributes
- */
-export type SafeParseResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: unknown };
-
-/**
- * The immutable registry type returned by createRegistry
- */
-export interface Registry<TDefs extends TagDefinitions> {
-  /** Get all registered tag names */
-  readonly tagNames: ReadonlyArray<keyof TDefs & string>;
-
-  /** Get the definition for a specific tag */
-  getTag<K extends keyof TDefs>(name: K): Readonly<TDefs[K]> | undefined;
-
-  /** Check if a tag name is registered */
-  hasTag(name: string): name is keyof TDefs & string;
-
-  /** Get the Zod schema for a tag's attributes */
-  getSchema<K extends keyof TDefs>(name: K): TDefs[K]["schema"] | undefined;
-
-  /** Validate attributes for a tag using its Zod schema */
-  validateAttributes<K extends keyof TDefs>(
-    name: K,
-    attributes: unknown
-  ): SafeParseResult<InferAttributes<TDefs[K]>>;
-
-  /** Check if a tag is self-closing */
-  isSelfClosing<K extends keyof TDefs>(name: K): boolean;
-
-  /** Check if a tag has content */
-  hasContent<K extends keyof TDefs>(name: K): boolean;
-
-  /** The raw definitions (frozen) */
-  readonly definitions: Readonly<TDefs>;
-}
+// Re-export types for backwards compatibility
+export type {
+  TagDefinition,
+  TagDefinitions,
+  InferAttributes,
+  SafeParseResult,
+  Registry,
+} from "./types";
 
 /**
  * Create an immutable tag registry from tag definitions.
